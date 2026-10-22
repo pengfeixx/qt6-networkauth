@@ -4,15 +4,17 @@
 #ifndef QOAUTH1_H
 #define QOAUTH1_H
 
+#include <QtNetworkAuth/qoauthglobal.h>
+
 #ifndef QT_NO_HTTP
 
-#include <QtNetworkAuth/qoauthglobal.h>
 #include <QtNetworkAuth/qabstractoauth.h>
 
 #include <QtNetwork/qnetworkaccessmanager.h>
 
 QT_BEGIN_NAMESPACE
 
+// ### Qt 7 consider removing the support for OAuth1 (QTBUG-124329)
 class QOAuth1Private;
 class Q_OAUTH_EXPORT QOAuth1: public QAbstractOAuth
 {

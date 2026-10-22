@@ -1,9 +1,10 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:authorization-protocol
 
 #include "qabstractoauthreplyhandler_p.h" // for lcReplyHandler()
-#include "qoauthoobreplyhandler_p.h"
 #include "qoauthurischemereplyhandler.h"
+#include "qoauthurischemereplyhandler_p.h"
 
 #include <QtGui/qdesktopservices.h>
 
@@ -13,6 +14,8 @@
 #include <QtCore/qurlquery.h>
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 /*!
     \class QOAuthUriSchemeReplyHandler
@@ -43,10 +46,12 @@ QT_BEGIN_NAMESPACE
 
     The following code illustrates the usage. First, the needed variables:
 
-    \snippet src_oauth_replyhandlers.cpp uri-variables
+    \snippet src_oauth_replyhandlers_p.h uri-variables
 
     Followed up by the OAuth setup (error handling omitted for brevity):
 
+    \snippet src_oauth_replyhandlers.cpp uri-service-configuration
+    \codeline
     \snippet src_oauth_replyhandlers.cpp uri-oauth-setup
 
     Finally, we then set up the URI scheme reply-handler:
@@ -138,70 +143,74 @@ QT_BEGIN_NAMESPACE
             (\c apple-app-site-association)
     \endlist
 
-    \section2 \l {Qt for Windows}{Windows}, \l {Qt for Linux/X11}{Linux}
+    \section2 \l {Qt for Windows}{Windows}, \l {Qt for Linux}{Linux}
 
-    Currently not supported.
+    Currently not supported. However platforms and use cases supporting
+    \l {Qt WebEngine Platform Notes}{Qt WebEngine} can still use this reply
+    handler - see \l {Qt OAuth2 Browser Support} for details.
 */
 
-class QOAuthUriSchemeReplyHandlerPrivate : public QOAuthOobReplyHandlerPrivate
+bool QOAuthUriSchemeReplyHandlerPrivate::hasValidRedirectUrl() const
 {
-    Q_DECLARE_PUBLIC(QOAuthUriSchemeReplyHandler)
+    // RFC 6749 Section 3.1.2
+    return redirectUrl.isValid()
+           && !redirectUrl.scheme().isEmpty()
+           && redirectUrl.fragment().isEmpty();
+}
 
-public:
-    bool hasValidRedirectUrl() const
-    {
-        // RFC 6749 Section 3.1.2
-        return redirectUrl.isValid()
-               && !redirectUrl.scheme().isEmpty()
-               && redirectUrl.fragment().isEmpty();
-    }
+bool QOAuthUriSchemeReplyHandlerPrivate::_q_handleRedirectUrl(const QUrl &url)
+{
+    Q_Q(QOAuthUriSchemeReplyHandler);
+    // Remove the query parameters from comparison, and compare them manually (the parameters
+    // of interest like 'code' and 'state' are received as query parameters and comparison
+    // would always fail). Fragments are removed as some servers (eg. Reddit) seem to add some,
+    // possibly for some implementation consistency with other OAuth flows where fragments
+    // are actually used. Some servers (eg. Microsoft) also add an extra '/' path, so treat
+    // '/' and empty paths as equal
+    auto normalized = [](const QUrl &url) {
+        auto normalized = url.adjusted(QUrl::RemoveQuery | QUrl::RemoveFragment);
+        if (normalized.path().isEmpty())
+            normalized.setPath("/"_L1);
+        return normalized;
+    };
 
-    void _q_handleRedirectUrl(const QUrl &url)
-    {
-        Q_Q(QOAuthUriSchemeReplyHandler);
-        // Remove the query parameters from comparison, and compare them manually (the parameters
-        // of interest like 'code' and 'state' are received as query parameters and comparison
-        // would always fail). Fragments are removed as some servers (eg. Reddit) seem to add some,
-        // possibly for some implementation consistency with other OAuth flows where fragments
-        // are actually used.
-        bool urlMatch = url.matches(redirectUrl, QUrl::RemoveQuery | QUrl::RemoveFragment);
+    bool urlMatch = normalized(url).matches(normalized(redirectUrl), QUrl::None);
 
-        const QUrlQuery responseQuery{url};
-        if (urlMatch) {
-            // Verify that query parameters that are part of redirect URL are present in redirection
-            const auto registeredItems = QUrlQuery{redirectUrl}.queryItems();
-            for (const auto &item: registeredItems) {
-                if (!responseQuery.hasQueryItem(item.first)
-                    || responseQuery.queryItemValue(item.first) != item.second) {
-                    urlMatch = false;
-                    break;
-                }
+    const QUrlQuery responseQuery{url};
+    if (urlMatch) {
+        // Verify that query parameters that are part of redirect URL are present in redirection
+        const auto registeredItems = QUrlQuery{redirectUrl}.queryItems();
+        for (const auto &item: registeredItems) {
+            if (!responseQuery.hasQueryItem(item.first)
+                || responseQuery.queryItemValue(item.first) != item.second) {
+                urlMatch = false;
+                break;
             }
         }
+    }
 
-        if (!urlMatch) {
-            qCDebug(lcReplyHandler(), "Url ignored");
+    if (!urlMatch) {
+        qCDebug(lcReplyHandler(), "Url ignored");
+        if (forwardUnhandledUrls) {
             // The URLs received here might be unrelated. Further, in case of "https" scheme,
             // the first request issued to the authorization server comes through here
             // (if this handler is listening)
             QDesktopServices::openUrl(url);
-            return;
         }
-
-        qCDebug(lcReplyHandler(), "Url handled");
-
-        QVariantMap resultParameters;
-        const auto responseItems = responseQuery.queryItems(QUrl::FullyDecoded);
-        for (const auto &item : responseItems)
-            resultParameters.insert(item.first, item.second);
-
-        emit q->callbackReceived(resultParameters);
+        return false;
     }
 
-public:
-    QUrl redirectUrl;
-    bool listening = false;
-};
+    qCDebug(lcReplyHandler(), "Url handled");
+    emit q->callbackDataReceived(url.toEncoded());
+
+    QVariantMap resultParameters;
+    const auto responseItems = responseQuery.queryItems(QUrl::FullyDecoded);
+    for (const auto &item : responseItems)
+        resultParameters.insert(item.first, item.second);
+
+    emit q->callbackReceived(resultParameters);
+    return true;
+}
 
 /*!
     \fn QOAuthUriSchemeReplyHandler::QOAuthUriSchemeReplyHandler()
@@ -294,6 +303,33 @@ QUrl QOAuthUriSchemeReplyHandler::redirectUrl() const
 {
     Q_D(const QOAuthUriSchemeReplyHandler);
     return d->redirectUrl;
+}
+
+/*!
+    \since 6.9
+    This function is used to supply the redirect URL the Authorization
+    Server provides at the end of the authorization stage. The provided
+    \a url undergoes the same URL matching as described in \l {redirectUrl}.
+
+    Suppyling the URL can be useful for scenarios where this redirect URL
+    is captured by some other means, for example with \l {Qt WebEngine} or
+    through some other custom arrangement. This way such agent usage can be
+    integrated with rest of the OAuth2 flow.
+
+    This handler does not need to be listening, and therefore it is
+    recommended to \l close() the handler to avoid unnecessary listening.
+
+    Returns \c true if the URL matched and was handled, \c false otherwise.
+
+    See also \l {Redirect URI Schemes}{Redirect URI Schemes with Qt WebEngine}.
+*/
+bool QOAuthUriSchemeReplyHandler::handleAuthorizationRedirect(const QUrl &url)
+{
+    Q_D(QOAuthUriSchemeReplyHandler);
+    d->forwardUnhandledUrls = false;
+    const bool handled = d->_q_handleRedirectUrl(url);
+    d->forwardUnhandledUrls = true;
+    return handled;
 }
 
 /*!

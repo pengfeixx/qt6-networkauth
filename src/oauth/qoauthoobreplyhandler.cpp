@@ -1,11 +1,9 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-
-#ifndef QT_NO_HTTP
+// Qt-Security score:critical reason:authorization-protocol
 
 #include "qoauthoobreplyhandler.h"
 #include "qoauthoobreplyhandler_p.h"
-#include "qabstractoauthreplyhandler_p.h"
 
 #include <QtCore/qurlquery.h>
 #include <QtCore/qjsonobject.h>
@@ -13,6 +11,7 @@
 #include <QtCore/qloggingcategory.h>
 
 #include <QtNetwork/qnetworkreply.h>
+#include <QtNetwork/qrestreply.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -27,6 +26,9 @@ QOAuthOobReplyHandler::QOAuthOobReplyHandler(QOAuthOobReplyHandlerPrivate &d, QO
     : QAbstractOAuthReplyHandler(d, parent)
 {}
 
+QOAuthOobReplyHandler::~QOAuthOobReplyHandler()
+    = default; // must be empty until Qt 7 (was inline until Qt 6.8)
+
 QString QOAuthOobReplyHandler::callback() const
 {
     return QStringLiteral("oob");
@@ -34,12 +36,15 @@ QString QOAuthOobReplyHandler::callback() const
 
 void QOAuthOobReplyHandler::networkReplyFinished(QNetworkReply *reply)
 {
-    if (reply->error() != QNetworkReply::NoError) {
+    QRestReply restReply(reply);
+
+    if (restReply.hasError()) {
         emit tokenRequestErrorOccurred(QAbstractOAuth::Error::NetworkError, reply->errorString());
         return;
     }
+    const bool isHttpStatusSuccess = restReply.isHttpStatusSuccess();
     if (reply->header(QNetworkRequest::ContentTypeHeader).isNull()) {
-        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::NetworkError,
+        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError,
                                        u"Empty Content-type header"_s);
         return;
     }
@@ -48,7 +53,7 @@ void QOAuthOobReplyHandler::networkReplyFinished(QNetworkReply *reply)
                 reply->header(QNetworkRequest::ContentTypeHeader).toString();
     const QByteArray data = reply->readAll();
     if (data.isEmpty()) {
-        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::NetworkError, u"No received data"_s);
+        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError, u"No data received"_s);
         return;
     }
 
@@ -69,13 +74,22 @@ void QOAuthOobReplyHandler::networkReplyFinished(QNetworkReply *reply)
         }
         const QJsonObject object = document.object();
         if (object.isEmpty()) {
-            qCWarning(lcReplyHandler, "Received empty JSON object: %s",
-                      qPrintable(QString::fromUtf8(data)));
+            emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError,
+                                           u"Received an empty JSON object"_s);
+            return;
         }
         ret = object.toVariantMap();
     } else {
         emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError,
                                u"Unknown Content-type %1"_s.arg(contentType));
+        return;
+    }
+
+    // RFC 6749 section 5.2 specifies that token endpoint errors are typically
+    // returned with HTTP status 400. Let tokensReceived() handler report
+    // the error if it's an actual sever-side reported error. Otherwise error out here
+    if (!isHttpStatusSuccess && !ret.contains(u"error"_s)) {
+        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError, reply->errorString());
         return;
     }
 
@@ -86,7 +100,7 @@ QVariantMap QOAuthOobReplyHandler::parseResponse(const QByteArray &response)
 {
     QVariantMap ret;
     QUrlQuery query(QString::fromUtf8(response));
-    auto queryItems = query.queryItems(QUrl::FullyDecoded);
+    const auto queryItems = query.queryItems(QUrl::FullyDecoded);
     for (auto it = queryItems.begin(), end = queryItems.end(); it != end; ++it)
         ret.insert(it->first, it->second);
     return ret;
@@ -95,5 +109,3 @@ QVariantMap QOAuthOobReplyHandler::parseResponse(const QByteArray &response)
 QT_END_NAMESPACE
 
 #include "moc_qoauthoobreplyhandler.cpp"
-
-#endif // QT_NO_HTTP

@@ -15,6 +15,8 @@ qt_internal_add_module(NetworkAuth
         qoauth1.cpp qoauth1.h qoauth1_p.h
         qoauth1signature.cpp qoauth1signature.h qoauth1signature_p.h
         qoauth2authorizationcodeflow.cpp qoauth2authorizationcodeflow.h qoauth2authorizationcodeflow_p.h
+        qoauth2deviceauthorizationflow.cpp qoauth2deviceauthorizationflow.h
+        qoauth2deviceauthorizationflow_p.h
         qoauthglobal.h
         qoauthhttpserverreplyhandler.cpp qoauthhttpserverreplyhandler.h qoauthhttpserverreplyhandler_p.h
         qoauthoobreplyhandler.cpp qoauthoobreplyhandler.h qoauthoobreplyhandler_p.h
@@ -31,6 +33,7 @@ qt_internal_add_module(NetworkAuth
 qt_internal_extend_target(NetworkAuth CONDITION QT_FEATURE_urischeme_replyhandler
     SOURCES
         qoauthurischemereplyhandler.cpp qoauthurischemereplyhandler.h
+        qoauthurischemereplyhandler_p.h
     LIBRARIES
         Qt::Gui
 )

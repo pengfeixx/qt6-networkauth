@@ -1,25 +1,23 @@
 Source: qt6-networkauth
 Section: libs
-Priority: optional
 Maintainer: Debian Qt/KDE Maintainers <debian-qt-kde@lists.debian.org>
-Uploaders: Patrick Franz <deltaone@debian.org>, Lu YaNing <dluyaning@gmail.com>,
-Build-Depends: cmake (>= 3.24~),
-               debhelper-compat (= 13),
+Uploaders: Patrick Franz <deltaone@debian.org>,
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.24~),
                libgl-dev,
                libssl-dev,
                libvulkan-dev [linux-any],
                ninja-build,
-               pkg-config,
                pkg-kde-tools,
-               qt6-base-dev (>= 6.8.0+dfsg~),
-               qt6-base-private-dev (>= 6.8.0+dfsg~),
-Build-Depends-Indep: qt6-base-dev (>= 6.8~) <!nodoc>,
-                     qt6-documentation-tools (>= 6.8~) <!nodoc>,
-Standards-Version: 4.6.2
+               pkgconf,
+               qt6-base-dev (>= 6.11.2+dfsg~),
+               qt6-base-private-dev (>= 6.11.2+dfsg~),
+Build-Depends-Indep: qt6-base-dev (>= 6.11~) <!nodoc>,
+                     qt6-documentation-tools (>= 6.11~) <!nodoc>,
+Standards-Version: 4.7.4
 Homepage: https://www.qt.io/developers/
 Vcs-Browser: https://salsa.debian.org/qt-kde-team/qt6/qt6-networkauth
 Vcs-Git: https://salsa.debian.org/qt-kde-team/qt6/qt6-networkauth.git
-Rules-Requires-Root: no
 
 Package: libqt6networkauth6
 Architecture: any
@@ -37,15 +35,12 @@ Description: Qt 6 NetworkAuth library
  This package contains the Qt 6 NetworkAuth libraries.
 
 Package: qt6-networkauth-dev
-Provides: libqt6networkauth6-dev (= ${binary:Version}),
 Architecture: any
 Multi-Arch: same
 Section: libdevel
 Depends: libqt6networkauth6 (= ${binary:Version}),
          qt6-base-dev,
          ${misc:Depends},
-Breaks: libqt6networkauth6-dev (<< 6.4.1-1~),
-Replaces: libqt6networkauth6-dev (<< 6.4.1-1~),
 Description: Qt 6 NetworkAuth - development files
  Qt is a cross-platform C++ application framework. Qt's primary feature
  is its rich set of widgets that provide standard GUI functionality.
@@ -58,6 +53,7 @@ Description: Qt 6 NetworkAuth - development files
  using the Qt 6 NetworkAuth library.
 
 Package: qt6-networkauth-doc
+Build-Profiles: <!nodoc>
 Architecture: all
 Section: doc
 Depends: qt6-base-doc, ${misc:Depends},
@@ -69,6 +65,7 @@ Description: Qt 6 network auth documentation
  This package contains the documentation for the Qt 6 network auth.
 
 Package: qt6-networkauth-doc-html
+Build-Profiles: <!nodoc>
 Architecture: all
 Section: doc
 Depends: qt6-base-doc-html, ${misc:Depends},
@@ -80,6 +77,7 @@ Description: Qt 6 network auth HTML documentation
  This package contains the HTML documentation for the Qt 6 network auth.
 
 Package: qt6-networkauth-doc-dev
+Build-Profiles: <!nodoc>
 Architecture: all
 Section: libdevel
 Depends: qt6-base-doc-dev, ${misc:Depends},

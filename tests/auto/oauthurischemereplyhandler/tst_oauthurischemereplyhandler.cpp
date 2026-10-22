@@ -6,6 +6,7 @@
 
 #include <QtGui/qdesktopservices.h>
 
+#include <QtNetworkAuth/private/qoauthurischemereplyhandler_p.h>
 #include <QtNetworkAuth/qoauth2authorizationcodeflow.h>
 #include <QtNetworkAuth/qoauthurischemereplyhandler.h>
 
@@ -26,6 +27,9 @@ private Q_SLOTS:
     void listenClose();
     void authorization_data();
     void authorization();
+    void callbackDataReceived_data();
+    void callbackDataReceived();
+    void handleAuthorizationRedirect();
 
 private:
     const QUrl customUrlWithPath{"com.my.app:/somepath"_L1};
@@ -38,6 +42,23 @@ private:
     static constexpr auto code = "a_code"_L1;
     const QString stateCodeQuery = "?state="_L1 + state + "&code="_L1  + code;
     const QVariantMap stateCodeMap{{"state"_L1, state}, {"code"_L1, code}};
+};
+
+// This class is used to access reply handler's private class in order
+// to prevent it from forwarding unhandled URLs. Forwarding these URLs
+// may trigger platform dialogues, which may be problematic for CI runs.
+// These autotests themselves don't rely on the forwarded URL triggering
+// anything in particular, so disabling them is fine.
+class UriSchemeReplyHandler : public QOAuthUriSchemeReplyHandler
+{
+public:
+    using QOAuthUriSchemeReplyHandler::QOAuthUriSchemeReplyHandler;
+
+    void setForwardUnhandledUrls(bool enabled)
+    {
+        auto *d = static_cast<QOAuthUriSchemeReplyHandlerPrivate *>(d_ptr.get());
+        d->forwardUnhandledUrls = enabled;
+    }
 };
 
 void tst_QOAuthUriSchemeReplyHandler::construction()
@@ -55,7 +76,8 @@ void tst_QOAuthUriSchemeReplyHandler::construction()
 
 void tst_QOAuthUriSchemeReplyHandler::redirectUrl()
 {
-    QOAuthUriSchemeReplyHandler rh;
+    UriSchemeReplyHandler rh;
+    rh.setForwardUnhandledUrls(false);
     QSignalSpy urlChangedSpy(&rh, &QOAuthUriSchemeReplyHandler::redirectUrlChanged);
 
     rh.setRedirectUrl(customUrlWithPath);
@@ -84,9 +106,10 @@ void tst_QOAuthUriSchemeReplyHandler::redirectUrl()
 
 void tst_QOAuthUriSchemeReplyHandler::listenClose()
 {
-    const QUrl scheme1 = u"scheme1:/foo"_s;
-    const QUrl scheme2 = u"scheme2:/foo"_s;
-    QOAuthUriSchemeReplyHandler rh;
+    const QUrl scheme1{u"scheme1:/foo"_s};
+    const QUrl scheme2{u"scheme2:/foo"_s};
+    UriSchemeReplyHandler rh;
+    rh.setForwardUnhandledUrls(false);
     QSignalSpy callbackSpy(&rh, &QAbstractOAuthReplyHandler::callbackReceived);
 
     rh.setRedirectUrl(scheme1);
@@ -98,12 +121,12 @@ void tst_QOAuthUriSchemeReplyHandler::listenClose()
     QDesktopServices::openUrl(scheme2);
     QCOMPARE(callbackSpy.size(), 2);
 
-    QDesktopServices::openUrl(scheme1); // Previous scheme should be unregistered
+    // Verify old scheme is no longer accepted by the handler
+    QVERIFY(!rh.handleAuthorizationRedirect(scheme1));
     QCOMPARE(callbackSpy.size(), 2);
 
     rh.close();
-    QDesktopServices::openUrl(scheme2);
-    QCOMPARE(callbackSpy.size(), 2);
+    QVERIFY(!rh.isListening());
 }
 
 void tst_QOAuthUriSchemeReplyHandler::authorization_data()
@@ -126,6 +149,29 @@ void tst_QOAuthUriSchemeReplyHandler::authorization_data()
         << QUrl{"com.example://cb.example.org/a_path"_L1}
         << QUrl{"com.example://cb.example.org/a_path"_L1 + stateCodeQuery}
         << true << stateCodeMap;
+
+    QTest::newRow("match_with_empty_path_1")
+        << QUrl{"com.example://cb.example.org/"_L1}
+        << QUrl{"com.example://cb.example.org/"_L1 + stateCodeQuery}
+        << true << stateCodeMap;
+
+    // No path vs empty path
+    QTest::newRow("match_with_empty_path_2")
+        << QUrl{"com.example://cb.example.org"_L1}
+        << QUrl{"com.example://cb.example.org/"_L1 + stateCodeQuery}
+        << true << stateCodeMap;
+
+    // Empty path vs no path
+    QTest::newRow("match_with_empty_path_3")
+        << QUrl{"com.example://cb.example.org/"_L1}
+        << QUrl{"com.example://cb.example.org"_L1 + stateCodeQuery}
+        << true << stateCodeMap;
+
+    // Empty path vs no path, and host mismatch
+    QTest::newRow("match_with_empty_path_4")
+        << QUrl{"com.example://cb.abc.example.org/"_L1}
+        << QUrl{"com.example://cb.def.example.org"_L1 + stateCodeQuery}
+        << false << stateCodeMap;
 
     QVariantMap resultParameters = stateCodeMap;
     resultParameters.insert("lang"_L1, "de");
@@ -156,13 +202,18 @@ void tst_QOAuthUriSchemeReplyHandler::authorization()
     QFETCH(const bool, matches);
     QFETCH(const QVariantMap, result_parameters);
 
-    QOAuthUriSchemeReplyHandler rh;
+    UriSchemeReplyHandler rh;
+    rh.setForwardUnhandledUrls(false);
     rh.setRedirectUrl(registered_redirect_uri);
     rh.listen();
 
     QOAuth2AuthorizationCodeFlow oauth;
     oauth.setAuthorizationUrl(authorizationUrl);
-    oauth.setAccessTokenUrl(accessTokenUrl);
+#if QT_DEPRECATED_SINCE(6, 13)
+    QT_IGNORE_DEPRECATIONS(oauth.setAccessTokenUrl(accessTokenUrl);)
+#else
+    oauth.setTokenUrl(accessTokenUrl);
+#endif
     oauth.setState(state);
     oauth.setReplyHandler(&rh);
 
@@ -195,6 +246,43 @@ void tst_QOAuthUriSchemeReplyHandler::authorization()
         QTRY_VERIFY(!redirectedSpy.isEmpty());
         QCOMPARE(redirectedSpy.takeFirst().at(0).toMap(), result_parameters);
     }
+}
+
+void tst_QOAuthUriSchemeReplyHandler::callbackDataReceived_data()
+{
+    QTest::addColumn<QUrl>("response_redirect_uri");
+
+    QTest::addRow("base_url") << QUrl(u"io:/path"_s);
+    QTest::addRow("query_parameters") << QUrl(u"io:/path?k1=v1"_s);
+}
+
+void tst_QOAuthUriSchemeReplyHandler::callbackDataReceived()
+{
+    QFETCH(const QUrl, response_redirect_uri);
+
+    UriSchemeReplyHandler rh(QUrl{u"io:/path"_s});
+    rh.setForwardUnhandledUrls(false);
+    QSignalSpy spy(&rh, &QOAuthUriSchemeReplyHandler::callbackDataReceived);
+    QVERIFY(rh.isListening());
+
+    QDesktopServices::openUrl(response_redirect_uri);
+    QTRY_COMPARE(spy.size(), 1);
+    QCOMPARE(spy.at(0).at(0).toByteArray(), response_redirect_uri.toEncoded());
+}
+
+void tst_QOAuthUriSchemeReplyHandler::handleAuthorizationRedirect()
+{
+    QOAuthUriSchemeReplyHandler handler;
+    QSignalSpy callbackReceivedSpy(&handler, &QOAuthUriSchemeReplyHandler::callbackReceived);
+    const QUrl redirectUrl(u"com.example.myqtapp:/oauthredirect"_s);
+    const QUrl validAuthorizationRedirect(u"com.example.myqtapp:/oauthredirect?code=foo"_s);
+    const QUrl invalidAuthorizationRedirect(u"com.example.wrong.myqtapp:/oauthredirect?code=foo"_s);
+    handler.setRedirectUrl(redirectUrl);
+    QVERIFY(!handler.handleAuthorizationRedirect(invalidAuthorizationRedirect));
+    QVERIFY(callbackReceivedSpy.isEmpty());
+    QVERIFY(handler.handleAuthorizationRedirect(validAuthorizationRedirect));
+    QVERIFY(!callbackReceivedSpy.isEmpty());
+    QCOMPARE(callbackReceivedSpy.at(0).at(0).toMap().value("code").toString(), u"foo"_s);
 }
 
 QTEST_MAIN(tst_QOAuthUriSchemeReplyHandler)

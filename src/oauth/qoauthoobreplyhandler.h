@@ -4,13 +4,15 @@
 #ifndef QOAUTHOOBREPLYHANDLER_H
 #define QOAUTHOOBREPLYHANDLER_H
 
+#include <QtNetworkAuth/qoauthglobal.h>
+
 #ifndef QT_NO_HTTP
 
-#include <QtNetworkAuth/qoauthglobal.h>
 #include <QtNetworkAuth/qabstractoauthreplyhandler.h>
 
 QT_BEGIN_NAMESPACE
 
+// ### Qt 7 remove this undocumented class and arrange it's functionality otherwise (QTBUG-124329)
 class QOAuthOobReplyHandlerPrivate;
 class Q_OAUTH_EXPORT QOAuthOobReplyHandler : public QAbstractOAuthReplyHandler
 {
@@ -18,6 +20,7 @@ class Q_OAUTH_EXPORT QOAuthOobReplyHandler : public QAbstractOAuthReplyHandler
 
 public:
     explicit QOAuthOobReplyHandler(QObject *parent = nullptr);
+    ~QOAuthOobReplyHandler() override;
 
     QString callback() const override;
 

@@ -4,9 +4,10 @@
 #ifndef QOAUTH2AUTHORIZATIONCODEFLOW_H
 #define QOAUTH2AUTHORIZATIONCODEFLOW_H
 
+#include <QtNetworkAuth/qoauthglobal.h>
+
 #ifndef QT_NO_HTTP
 
-#include <QtNetworkAuth/qoauthglobal.h>
 #include <QtNetworkAuth/qabstractoauth2.h>
 
 QT_BEGIN_NAMESPACE
@@ -19,10 +20,12 @@ class QOAuth2AuthorizationCodeFlowPrivate;
 class Q_OAUTH_EXPORT QOAuth2AuthorizationCodeFlow : public QAbstractOAuth2
 {
     Q_OBJECT
+#if QT_DEPRECATED_SINCE(6, 13)
     Q_PROPERTY(QUrl accessTokenUrl
                READ accessTokenUrl
                WRITE setAccessTokenUrl
                NOTIFY accessTokenUrlChanged)
+#endif
     Q_CLASSINFO("RegisterEnumClassesUnscoped", "false")
 
 public:
@@ -47,8 +50,12 @@ public:
 
     ~QOAuth2AuthorizationCodeFlow();
 
+#if QT_DEPRECATED_SINCE(6, 13)
+    QT_DEPRECATED_VERSION_X_6_13("Use QAbstractOAuth2::tokenUrl() instead.")
     QUrl accessTokenUrl() const;
+    QT_DEPRECATED_VERSION_X_6_13("Use QAbstractOAuth2::setTokenUrl() instead.")
     void setAccessTokenUrl(const QUrl &accessTokenUrl);
+#endif
 
     enum class PkceMethod : quint8 {
         S256,
@@ -62,7 +69,13 @@ public:
 
 public Q_SLOTS:
     void grant() override;
+#if QT_DEPRECATED_SINCE(6, 13)
+    QT_DEPRECATED_VERSION_X_6_13("Use QAbstractOAuth2::refreshTokens() instead")
     void refreshAccessToken();
+#endif
+
+protected Q_SLOTS:
+    void refreshTokensImplementation() QT7_ONLY(override);
 
 protected:
     QUrl buildAuthenticateUrl(const QMultiMap<QString, QVariant> &parameters = {});
@@ -71,7 +84,11 @@ protected:
                                     const QMultiMap<QString, QVariant> &parameters = {}) override;
 
 Q_SIGNALS:
+#if QT_DEPRECATED_SINCE(6, 13)
+    QT_MOC_COMPAT
+    QT_DEPRECATED_VERSION_X_6_13("Use QAbstractOAuth2::tokenUrlChanged() instead.")
     void accessTokenUrlChanged(const QUrl &accessTokenUrl);
+#endif
 
 private:
     Q_DISABLE_COPY(QOAuth2AuthorizationCodeFlow)

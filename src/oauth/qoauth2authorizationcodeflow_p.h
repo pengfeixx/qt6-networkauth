@@ -15,8 +15,6 @@
 #ifndef QOAUTH2AUTHORIZATIONCODEFLOW_P_H
 #define QOAUTH2AUTHORIZATIONCODEFLOW_P_H
 
-#ifndef QT_NO_HTTP
-
 #include <private/qabstractoauth2_p.h>
 
 #include <QtNetworkAuth/qoauthglobal.h>
@@ -39,8 +37,6 @@ public:
                                         QNetworkAccessManager *manager = nullptr);
 
     void _q_handleCallback(const QVariantMap &data);
-    void _q_accessTokenRequestFinished(const QVariantMap &values);
-    void _q_accessTokenRequestFailed(QAbstractOAuth::Error error, const QString &errorString = {});
     void _q_authenticate(QNetworkReply *reply, QAuthenticator *authenticator);
 
     QByteArray createPKCEChallenge();
@@ -50,13 +46,9 @@ public:
     quint8 pkceVerifierLength = 43; // RFC 7636 Section 4.1
     QByteArray pkceCodeVerifier;
 
-    QUrl accessTokenUrl;
-    QString tokenType;
     QPointer<QNetworkReply> currentReply;
 };
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_HTTP
 
 #endif // QOAUTH2AUTHORIZATIONCODEFLOW_P_H

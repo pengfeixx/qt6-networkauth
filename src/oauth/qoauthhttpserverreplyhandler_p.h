@@ -15,8 +15,6 @@
 #ifndef QOAUTHHTTPSERVERREPLYHANDLER_P_H
 #define QOAUTHHTTPSERVERREPLYHANDLER_P_H
 
-#ifndef QT_NO_HTTP
-
 #include <QtNetworkAuth/qoauthglobal.h>
 #include <QtNetworkAuth/qoauthhttpserverreplyhandler.h>
 
@@ -24,6 +22,13 @@
 
 #include <QtNetwork/qhostaddress.h>
 #include <QtNetwork/qtcpserver.h>
+
+#include <QtCore/qbytearray.h>
+#include <QtCore/qhash.h>
+#include <QtCore/qmap.h>
+#include <QtCore/qurl.h>
+
+#include <utility>
 
 QT_BEGIN_NAMESPACE
 
@@ -36,17 +41,21 @@ public:
     ~QOAuthHttpServerReplyHandlerPrivate();
 
     QString callback() const;
+    QString callbackHost() const;
 
-    QTcpServer httpServer;
+    QTcpServer *httpServer = nullptr;
     QString text;
     QString path;
     QHostAddress callbackAddress;
+    QString callbackHostname;
     quint16 callbackPort = 0;
 
 private:
     void _q_clientConnected();
     void _q_readData(QTcpSocket *socket);
     void _q_answerClient(QTcpSocket *socket, const QUrl &url);
+    void initializeLocalServer();
+    bool listen(const QHostAddress &address, quint16 port);
 
     struct QHttpRequest {
         quint16 port = 0;
@@ -75,17 +84,15 @@ private:
             Delete,
         } method = Method::Unknown;
         QUrl url;
-        QPair<quint8, quint8> version;
+        std::pair<quint8, quint8> version;
         QMap<QByteArray, QByteArray> headers;
     };
 
-    QMap<QTcpSocket *, QHttpRequest> clients;
+    QHash<QTcpSocket *, QHttpRequest> clients;
 
     QOAuthHttpServerReplyHandler *q_ptr;
 };
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_HTTP
 
 #endif // QOAUTHHTTPSERVERREPLYHANDLER_P_H

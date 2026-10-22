@@ -1,7 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-
-#ifndef QT_NO_HTTP
+// Qt-Security score:critical reason:authorization-protocol
 
 #include <qabstractoauth.h>
 #include <qabstractoauthreplyhandler.h>
@@ -9,7 +8,6 @@
 #include <private/qabstractoauth_p.h>
 
 #include <QtCore/qurl.h>
-#include <QtCore/qpair.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qurlquery.h>
 #include <QtCore/qjsondocument.h>
@@ -104,7 +102,17 @@ QT_BEGIN_NAMESPACE
     has not verified the supplied callback URI in the request. This
     usually happens when the provided callback does not match with
     the callback supplied during client registration.
+
+    \value [since 6.9] ClientError          An error that is attributable
+    to the client application (e.g. missing configuration or attempting a
+    request in a state where it's not allowed). Currently used by
+    \l {QOAuth2DeviceAuthorizationFlow}.
+
+    \value [since 6.9] ExpiredError         A token has expired.
+    Currently used by \l {QOAuth2DeviceAuthorizationFlow}.
 */
+
+// ### Qt 7 remove ContentType when removing support for HTTP methods (QTBUG-124329)
 
 /*!
     \enum QAbstractOAuth::ContentType
@@ -172,6 +180,19 @@ QT_BEGIN_NAMESPACE
     \sa QAbstractOAuth2::error()
     \sa QAbstractOAuthReplyHandler::tokenRequestErrorOccurred()
 */
+
+/*!
+    \fn void QAbstractOAuth::finished(QNetworkReply *reply)
+    \internal
+*/
+
+/*!
+    \fn void QAbstractOAuth::replyDataReceived(const QByteArray &data)
+    \internal
+*/
+
+// ### Qt 7 remove the support for separate HTTP methods (head(), get(), post(), put(),
+// deleteResource()), see QTBUG-124329
 
 /*!
     \fn QNetworkReply *QAbstractOAuth::head(const QUrl &url, const QVariantMap &parameters)
@@ -273,7 +294,7 @@ void QAbstractOAuthPrivate::setStatus(QAbstractOAuth::Status newStatus)
     }
 }
 
-QByteArray QAbstractOAuthPrivate::generateRandomString(quint8 length)
+QByteArray QAbstractOAuthPrivate::generateRandomBase64String(quint8 length)
 {
     // We'll use QByteArray::toBase64() to create a random-looking string from
     // pure random data. In Base64 encoding, we get 6 bits of randomness per
@@ -296,6 +317,16 @@ QByteArray QAbstractOAuthPrivate::generateRandomString(quint8 length)
     return ba;
 }
 
+void QAbstractOAuthPrivate::setExtraTokens(const QVariantMap &tokens)
+{
+    if (extraTokens == tokens)
+        return;
+    Q_Q(QAbstractOAuth);
+    extraTokens = tokens;
+    emit q->extraTokensChanged(extraTokens);
+}
+
+// ### Qt 7 remove when removing HTTP method support (QTBUG-124329)
 QByteArray QAbstractOAuthPrivate::convertParameters(const QVariantMap &parameters)
 {
     QByteArray data;
@@ -307,13 +338,14 @@ QByteArray QAbstractOAuthPrivate::convertParameters(const QVariantMap &parameter
         QUrlQuery query;
         for (auto it = parameters.begin(), end = parameters.end(); it != end; ++it)
             query.addQueryItem(it.key(), it->toString());
-        data = query.toString(QUrl::FullyEncoded).toUtf8();
+        data = query.toString(QUrl::FullyEncoded).toLatin1();
         break;
     }
     }
     return data;
 }
 
+// ### Qt 7 remove when removing HTTP method support (QTBUG-124329)
 void QAbstractOAuthPrivate::addContentTypeHeaders(QNetworkRequest *request)
 {
     Q_ASSERT(request);
@@ -351,6 +383,13 @@ QAbstractOAuth::~QAbstractOAuth()
 {}
 
 /*!
+    \property QAbstractOAuth::clientIdentifier
+
+    This property holds the client identifier used in the authentication process.
+
+    \sa setClientIdentifier()
+*/
+/*!
     Returns the current client identifier used in the authentication
     process.
 
@@ -376,6 +415,13 @@ void QAbstractOAuth::setClientIdentifier(const QString &clientIdentifier)
     }
 }
 
+/*!
+    \property QAbstractOAuth::token
+
+    This property holds the token used to sign authenticated requests.
+
+    \sa setToken()
+*/
 /*!
     Returns the token used to sign the authenticated requests.
 
@@ -504,6 +550,8 @@ void QAbstractOAuth::setReplyHandler(QAbstractOAuthReplyHandler *handler)
     d->replyHandler = handler;
 }
 
+// ### Qt 7 remove prepareRequest when removing HTTP method support (QTBUG-124329)
+
 /*!
     \fn QAbstractOAuth::prepareRequest(QNetworkRequest *request, const QByteArray &verb, const QByteArray &body)
     \since 5.13
@@ -545,6 +593,7 @@ void QAbstractOAuth::setModifyParametersFunction(
 */
 QAbstractOAuth::ContentType QAbstractOAuth::contentType() const
 {
+    // ### Qt 7 remove this function when removing HTTP method support (QTBUG-124329)
     Q_D(const QAbstractOAuth);
     return d->contentType;
 }
@@ -554,6 +603,7 @@ QAbstractOAuth::ContentType QAbstractOAuth::contentType() const
 */
 void QAbstractOAuth::setContentType(QAbstractOAuth::ContentType contentType)
 {
+    // ### Qt 7 remove this function when removing HTTP method support (QTBUG-124329)
     Q_D(QAbstractOAuth);
     if (d->contentType != contentType) {
         d->contentType = contentType;
@@ -612,9 +662,7 @@ void QAbstractOAuth::resourceOwnerAuthorization(const QUrl &url, const QMultiMap
 */
 QByteArray QAbstractOAuth::generateRandomString(quint8 length)
 {
-    return QAbstractOAuthPrivate::generateRandomString(length);
+    return QAbstractOAuthPrivate::generateRandomBase64String(length);
 }
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_HTTP
